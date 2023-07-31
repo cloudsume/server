@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CassandraCSharpDriver" Version="3.17.1" />
+    <PackageReference Include="CassandraMigrator" Version="2.0.0" />
+    <PackageReference Include="CassandraMigrator.CqlParser" Version="3.0.0" />
+    <PackageReference Include="CassandraMigrator.DataStaxClient" Version="2.0.0" />
+    <PackageReference Include="CassandraMigrator.Provider" Version="3.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cloudsume.Analytics\Cloudsume.Analytics.csproj" />
+    <ProjectReference Include="..\Cloudsume.Configurations\Cloudsume.Configurations.csproj" />
+    <ProjectReference Include="..\Cloudsume.Data\Cloudsume.Data.csproj" />
+    <ProjectReference Include="..\Cloudsume.Financial\Cloudsume.Financial.csproj" />
+    <ProjectReference Include="..\Cloudsume.Resume\Cloudsume.Resume.csproj" />
+    <ProjectReference Include="..\Cloudsume.Stripe\Cloudsume.Stripe.csproj" />
+    <ProjectReference Include="..\Cloudsume.Template\Cloudsume.Template.csproj" />
+    <ProjectReference Include="..\Cornot\Cornot.csproj" />
+    <ProjectReference Include="..\Ultima.Extensions.Telephony\Ultima.Extensions.Telephony.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)\cassandra\schemas\*.cql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

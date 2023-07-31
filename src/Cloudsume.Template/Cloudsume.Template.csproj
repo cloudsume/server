@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NetUlid" Version="2.0.0" />
+    <PackageReference Include="Ultima.Extensions.Currency" Version="2.5.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cloudsume.Financial\Cloudsume.Financial.csproj" />
+  </ItemGroup>
+
+</Project>

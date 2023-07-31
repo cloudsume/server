@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Markdig" Version="0.23.0" />
+    <PackageReference Include="NetTemplate" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cloudsume.Resume\Cloudsume.Resume.csproj" />
+    <ProjectReference Include="..\Ultima.Extensions.Telephony\Ultima.Extensions.Telephony.csproj" />
+    <ProjectReference Include="..\Cloudsume.Data\Cloudsume.Data.csproj" />
+  </ItemGroup>
+
+</Project>

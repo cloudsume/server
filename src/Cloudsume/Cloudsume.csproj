@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Amazon.AspNetCore.DataProtection.SSM" Version="2.1.0" />
+    <PackageReference Include="Amazon.Extensions.Configuration.SystemsManager" Version="5.1.0" />
+    <PackageReference Include="AWSSDK.SecretsManager" Version="3.7.1.35" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="3.7.200.5" />
+    <PackageReference Include="Cloudsume.Models" Version="2.0.0" />
+    <PackageReference Include="System.Formats.Cbor" Version="6.0.0" />
+    <PackageReference Include="Ultima.Extensions.DataValidation" Version="1.0.0" />
+    <PackageReference Include="Ultima.Extensions.Json" Version="1.0.0" />
+    <PackageReference Include="Ultima.Extensions.Security" Version="1.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cloudsume.Aws\Cloudsume.Aws.csproj" />
+    <ProjectReference Include="..\Cloudsume.Builder\Cloudsume.Builder.csproj" />
+    <ProjectReference Include="..\Cloudsume.Cassandra\Cloudsume.Cassandra.csproj" />
+    <ProjectReference Include="..\Cloudsume.Configurations\Cloudsume.Configurations.csproj" />
+    <ProjectReference Include="..\Cloudsume.Identity\Cloudsume.Identity.csproj" />
+    <ProjectReference Include="..\NetCaptcha\NetCaptcha.csproj" />
+    <ProjectReference Include="..\NetCaptcha.ReCaptcha\NetCaptcha.ReCaptcha.csproj" />
+    <ProjectReference Include="..\Ultima.Extensions.Telephony\Ultima.Extensions.Telephony.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="certificate.pfx" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Dockerfile" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

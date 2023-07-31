@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Options" Version="6.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="6.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="5.0.0" />
+    <PackageReference Include="NetUlid" Version="2.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cornot\Cornot.csproj" />
+    <ProjectReference Include="..\Ultima.Extensions.Globalization\Ultima.Extensions.Globalization.csproj" />
+    <ProjectReference Include="..\Ultima.Extensions.Graphics\Ultima.Extensions.Graphics.csproj" />
+    <ProjectReference Include="..\Ultima.Extensions.Telephony\Ultima.Extensions.Telephony.csproj" />
+    <ProjectReference Include="..\Cloudsume.Financial\Cloudsume.Financial.csproj" />
+    <ProjectReference Include="..\Cloudsume.Services.Client\Cloudsume.Services.Client.csproj" />
+    <ProjectReference Include="..\Cloudsume.Template\Cloudsume.Template.csproj" />
+  </ItemGroup>
+
+</Project>

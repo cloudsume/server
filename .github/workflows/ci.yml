@@ -1,0 +1,300 @@
+name: CI
+on:
+  push:
+    branches:
+    - main
+    tags:
+    - '*'
+  pull_request:
+    branches:
+    - main
+concurrency: ${{ github.ref }}
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v3
+    - name: Build
+      run: dotnet build -c Release src/Cloudsume.sln
+    - name: Execute tests
+      run: dotnet test -c Release --no-build src/Cloudsume.sln
+      if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    - name: Create binary distribution
+      run: dotnet publish -o dist -c Release --no-build src/Cloudsume
+    - name: Build Docker image
+      run: docker build -t cloudsume-server dist
+      if: github.event_name == 'pull_request'
+    - name: Upload binary distribution
+      uses: actions/upload-artifact@v3
+      with:
+        name: server
+        path: dist
+  publish:
+    name: Publish
+    runs-on: ubuntu-20.04
+    outputs:
+      server-image: ${{ steps.image-tags.outputs.server }}
+    needs: build
+    if: github.event_name == 'push'
+    steps:
+    - name: Download binary distribution
+      uses: actions/download-artifact@v3
+      with:
+        name: server
+        path: server
+    - name: Generate Docker tags
+      run: |
+        my $registry = 'ghcr.io/cloudsume';
+        my ($branch) = $ENV{GITHUB_REF} =~ /\/([^\/]+)$/;
+        my %tags = (
+          server => "$registry/server:$branch",
+        );
+
+        open(my $output, '>>', $ENV{GITHUB_OUTPUT}) || die "Cannot open GITHUB_OUTPUT: $!";
+
+        while (my ($name, $tag) = each %tags) {
+          print $output "${name}=${tag}\n";
+        }
+
+        close($output);
+      shell: perl {0}
+      id: image-tags
+    - name: Build Docker image
+      run: |
+        tag="${{ steps.image-tags.outputs.server }}"
+        src="org.opencontainers.image.source=https://github.com/cloudsume/server"
+        lic="org.opencontainers.image.licenses=AGPL-3.0-or-later"
+        des="org.opencontainers.image.description=The server of Cloudsumé"
+
+        docker build -t "$tag" --label "$src" --label "$lic" --label "$des" server
+    - name: Push Docker image
+      run: docker push "${{ steps.image-tags.outputs.server }}"
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-20.04
+    permissions:
+      id-token: write
+      contents: read
+    needs: publish
+    if: github.event_name == 'push'
+    steps:
+    - name: Download binary distribution
+      uses: actions/download-artifact@v3
+      with:
+        name: server
+        path: server
+    - name: Generate configurations
+      run: |
+        my %conf;
+
+        if ($ENV{GITHUB_REF} =~ /^refs\/tags\//) {
+          %conf = (
+            'region' => 'us-west-2',
+            'cluster' => 'csm',
+            'deployer' => '${{ secrets.AWS_IAM_DEPLOYER_PRODUCTION }}',
+            'role' => '${{ secrets.AWS_IAM_ECS_PRODUCTION }}',
+            'cas-task' => 'csm-cassandra-prod',
+            'csm-svc' => 'cloudsume',
+            'csm-task' => 'csm-prod',
+            'csm-cpu' => '.25 vCPU',
+            'csm-memory' => '1 GB',
+            'csm-port' => '80',
+            'csm-health-check' => 'curl --fail --http2-prior-knowledge http://localhost/health || exit',
+            'csm-bind' => 'http://*',
+            'csm-env' => 'Production',
+            'csm-conf' => '/prod/cloudsume/config',
+            'log-group' => 'csm-prod',
+            'script-subnet' => 'subnet-07a2d67d4589bd18c'
+          );
+        } else {
+          %conf = (
+            'region' => 'ap-southeast-1',
+            'cluster' => 'development',
+            'deployer' => '${{ secrets.AWS_IAM_DEPLOYER_STAGING }}',
+            'role' => '${{ secrets.AWS_IAM_ECS_STAGING }}',
+            'cas-task' => 'csm-cassandra-dev',
+            'csm-svc' => 'csm',
+            'csm-task' => 'csm-dev',
+            'csm-cpu' => '.25 vCPU',
+            'csm-memory' => '0.5 GB',
+            'csm-port' => '443',
+            'csm-health-check' => 'curl --fail --insecure https://localhost/health || exit',
+            'csm-bind' => 'https://*',
+            'csm-env' => 'Staging',
+            'csm-conf' => '/dev/cloudsume/config',
+            'log-group' => 'csm-dev',
+            'script-subnet' => 'subnet-0c39d02bc4e99ec92'
+          );
+        }
+
+        open(my $output, '>>', $ENV{GITHUB_OUTPUT}) || die "Cannot open GITHUB_OUTPUT: $!";
+
+        while (my ($name, $value) = each %conf) {
+          print $output "${name}=${value}\n";
+        }
+
+        close($output);
+      shell: perl {0}
+      id: conf
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        role-to-assume: ${{ steps.conf.outputs.deployer }}
+        aws-region: ${{ steps.conf.outputs.region }}
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v1
+      id: ecr-login
+    - name: Prepare to build Cassandra Migrator
+      run: |
+        mkdir -vp migrator
+        echo "image=${{ steps.ecr-login.outputs.registry }}/csm-cassandra:${{ github.ref_name }}" >> $GITHUB_OUTPUT
+      id: migrator
+    - name: Generate Dockerfile for Cassandra Migrator
+      run: |
+        FROM ultimicro/cassandra-migrator:3.0.0
+
+        USER root
+
+        RUN mkdir -vp /usr/share/cloudsume-server/cassandra
+        COPY . /usr/share/cloudsume-server/cassandra/
+
+        RUN apt-get update && \
+            apt-get install -y curl unzip && \
+            curl https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip && \
+            unzip -q /tmp/awscliv2.zip -d /tmp/aws-cli && \
+            /tmp/aws-cli/aws/install && \
+            rm -rf /tmp/aws-cli /tmp/awscliv2.zip && \
+            apt-get remove -y curl unzip && \
+            apt-get -y autoremove
+
+        USER migrator
+
+        ENTRYPOINT addr=$(aws ssm get-parameter --name "${{ steps.conf.outputs.csm-conf }}/Cassandra/ContactPoints/0" --query Parameter.Value --output text) && \
+            keyspace=$(aws ssm get-parameter --name "${{ steps.conf.outputs.csm-conf }}/Cassandra/Keyspace" --query Parameter.Value --output text) \
+            user=$(aws ssm get-parameter --name "${{ steps.conf.outputs.csm-conf }}/Cassandra/Username" --query Parameter.Value --output text) \
+            secret=$(aws ssm get-parameter --name "${{ steps.conf.outputs.csm-conf }}/Cassandra/Password/ProviderOptions/SecretId" --query Parameter.Value --output text) && \
+            password=$(aws secretsmanager get-secret-value --secret-id "$secret" --query SecretString --output text) && \
+            dotnet cassandra-migrator.dll database -a "$addr" -k "$keyspace" -u "$user" -p "$password" update -d /usr/share/cloudsume-server/cassandra --no-create-keyspace
+      shell: cp {0} migrator/Dockerfile
+    - name: Build Cassandra Migrator
+      run: docker build -t "${{ steps.migrator.outputs.image }}" -f migrator/Dockerfile server/cassandra/schemas
+    - name: Push Cassandra Migrator
+      run: docker push "${{ steps.migrator.outputs.image }}"
+    - name: Generate ECS task for Cassandra Migrator
+      run: |
+        {
+          "family": "${{ steps.conf.outputs.cas-task }}",
+          "requiresCompatibilities": ["FARGATE"],
+          "taskRoleArn": "${{ steps.conf.outputs.role }}",
+          "executionRoleArn": "${{ secrets.AWS_IAM_ECS_EXECUTION }}",
+          "networkMode": "awsvpc",
+          "cpu": ".25 vCPU",
+          "memory": "0.5 GB",
+          "containerDefinitions": [
+            {
+              "name": "migrator",
+              "image": "${{ steps.migrator.outputs.image }}",
+              "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                  "awslogs-region": "${{ steps.conf.outputs.region }}",
+                  "awslogs-group": "${{ steps.conf.outputs.log-group }}",
+                  "awslogs-stream-prefix": "cassandra-migrator"
+                }
+              }
+            }
+          ]
+        }
+      shell: cp {0} cassandra-migrator.json
+    - name: Generate ECS task for Server
+      run: |
+        {
+          "family": "${{ steps.conf.outputs.csm-task }}",
+          "requiresCompatibilities": ["FARGATE"],
+          "taskRoleArn": "${{ steps.conf.outputs.role }}",
+          "executionRoleArn": "${{ secrets.AWS_IAM_ECS_EXECUTION }}",
+          "networkMode": "awsvpc",
+          "cpu": "${{ steps.conf.outputs.csm-cpu }}",
+          "memory": "${{ steps.conf.outputs.csm-memory }}",
+          "containerDefinitions": [
+            {
+              "name": "cloudsume",
+              "image": "${{ needs.publish.outputs.server-image }}",
+              "portMappings": [
+                {
+                  "containerPort": ${{ steps.conf.outputs.csm-port }}
+                }
+              ],
+              "healthCheck": {
+                "command": ["CMD-SHELL", "${{ steps.conf.outputs.csm-health-check }}"]
+              },
+              "environment": [
+                {
+                  "name": "ASPNETCORE_URLS",
+                  "value": "${{ steps.conf.outputs.csm-bind }}"
+                },
+                {
+                  "name": "ASPNETCORE_ENVIRONMENT",
+                  "value": "${{ steps.conf.outputs.csm-env }}"
+                },
+                {
+                  "name": "CLOUDSUME_AWS_CONFIG_PATH",
+                  "value": "${{ steps.conf.outputs.csm-conf }}/"
+                }
+              ],
+              "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                  "awslogs-region": "${{ steps.conf.outputs.region }}",
+                  "awslogs-group": "${{ steps.conf.outputs.log-group }}",
+                  "awslogs-stream-prefix": "cloudsume",
+                  "awslogs-multiline-pattern": "^(trce|dbug|info|warn|fail|crit)\\: [\\w\\.]+\\[\\d+\\]",
+                  "mode": "non-blocking"
+                }
+              }
+            }
+          ]
+        }
+      shell: cp {0} cloudsume.json
+    - name: Generate a script to run ECS task
+      run: |
+        cat <<'EOF' > run-task.sh
+        #!/bin/bash -e
+        task="$1"
+        cluster="${{ steps.conf.outputs.cluster }}"
+        network="awsvpcConfiguration={subnets=[${{ steps.conf.outputs.script-subnet }}],assignPublicIp=ENABLED}"
+
+        echo "==> starting task $task"
+        arn=$(aws ecs run-task --cluster "$cluster" --count 1 --launch-type FARGATE --network-configuration "$network" --platform-version 1.4.0 --task-definition "$task" --query tasks[0].taskArn --output text)
+
+        echo "==> waiting $arn for running"
+        aws ecs wait tasks-running --cluster "$cluster" --tasks "$arn"
+
+        echo "==> waiting $arn for completion"
+        aws ecs wait tasks-stopped --cluster "$cluster" --tasks "$arn"
+
+        echo "==> checking status of $arn"
+        status=$(aws ecs describe-tasks --cluster "$cluster" --tasks "$arn" --query tasks[0].containers[0].exitCode --output text)
+
+        if test x"$status" != x"0"; then
+          echo "task $task was exited with status $status" >&2
+          exit 1
+        fi
+        EOF
+
+        chmod +x run-task.sh
+    - name: Publish Cassandra Migrator
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: cassandra-migrator.json
+      id: migrator-task
+    - name: Run Cassandra Migrator
+      run: ./run-task.sh "${{ steps.migrator-task.outputs.task-definition-arn }}"
+    - name: Deploy Server
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: cloudsume.json
+        service: ${{ steps.conf.outputs.csm-svc }}
+        cluster: ${{ steps.conf.outputs.cluster }}
